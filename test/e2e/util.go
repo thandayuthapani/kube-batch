@@ -55,6 +55,7 @@ import (
 const currentApiCallMetricsVersion = "v1"
 
 var oneMinute = 1 * time.Minute
+var twoMinute = 2 * time.Minute
 var tenMinute = 10 * time.Minute
 
 var halfCPU = v1.ResourceList{"cpu": resource.MustParse("500m")}
@@ -416,9 +417,11 @@ func podGroupUnschedulable(ctx *context, pg *kbv1.PodGroup, time time.Time) wait
 
 		for _, event := range events.Items {
 			target := event.InvolvedObject
+			fmt.Println("Event: ", target.Name, " ", event.Reason)
 			if target.Name == pg.Name && target.Namespace == pg.Namespace {
 				if event.Reason == string(kbv1.PodGroupUnschedulableType) &&
 					event.LastTimestamp.After(time) {
+						fmt.Println("Required")
 					return true, nil
 				}
 			}
@@ -474,7 +477,7 @@ func waitTasksPending(ctx *context, pg *kbv1.PodGroup, taskNum int) error {
 }
 
 func waitPodGroupUnschedulable(ctx *context, pg *kbv1.PodGroup) error {
-	return wait.Poll(10*time.Second, oneMinute, podGroupUnschedulable(ctx, pg, time.Now()))
+	return wait.Poll(1*time.Second, twoMinute, podGroupUnschedulable(ctx, pg, time.Now()))
 }
 
 func createContainers(img string, req v1.ResourceList, hostport int32) []v1.Container {
@@ -518,7 +521,6 @@ func createReplicaSet(context *context, name string, rep int32, img string, req 
 					Labels: map[string]string{deploymentName: name},
 				},
 				Spec: v1.PodSpec{
-					SchedulerName: "kube-batch",
 					RestartPolicy: v1.RestartPolicyAlways,
 					Containers: []v1.Container{
 						{
