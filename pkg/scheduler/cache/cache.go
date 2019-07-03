@@ -51,6 +51,7 @@ import (
 	kbschema "github.com/kubernetes-sigs/kube-batch/pkg/client/clientset/versioned/scheme"
 	kbinfo "github.com/kubernetes-sigs/kube-batch/pkg/client/informers/externalversions"
 	kbinfov1 "github.com/kubernetes-sigs/kube-batch/pkg/client/informers/externalversions/scheduling/v1alpha1"
+	kbinfov2 "github.com/kubernetes-sigs/kube-batch/pkg/client/informers/externalversions/scheduling/v1alpha2"
 	"github.com/kubernetes-sigs/kube-batch/pkg/scheduler/api"
 	kbapi "github.com/kubernetes-sigs/kube-batch/pkg/scheduler/api"
 )
@@ -79,16 +80,17 @@ type SchedulerCache struct {
 	// schedulerName is the name for kube batch scheduler
 	schedulerName string
 
-	podInformer      infov1.PodInformer
-	nodeInformer     infov1.NodeInformer
-	pdbInformer      policyv1.PodDisruptionBudgetInformer
-	nsInformer       infov1.NamespaceInformer
-	podGroupInformer kbinfov1.PodGroupInformer
-	queueInformer    kbinfov1.QueueInformer
-	pvInformer       infov1.PersistentVolumeInformer
-	pvcInformer      infov1.PersistentVolumeClaimInformer
-	scInformer       storagev1.StorageClassInformer
-	pcInformer       schedv1.PriorityClassInformer
+	podInformer           infov1.PodInformer
+	nodeInformer          infov1.NodeInformer
+	pdbInformer           policyv1.PodDisruptionBudgetInformer
+	nsInformer            infov1.NamespaceInformer
+	podGroupInformer      kbinfov1.PodGroupInformer
+	queueInformerv1alpha1 kbinfov1.QueueInformer
+	queueInformerv1alpha2 kbinfov2.QueueInformer
+	pvInformer            infov1.PersistentVolumeInformer
+	pvcInformer           infov1.PersistentVolumeClaimInformer
+	scInformer            storagev1.StorageClassInformer
+	pcInformer            schedv1.PriorityClassInformer
 
 	Binder        Binder
 	Evictor       Evictor
@@ -288,12 +290,20 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		DeleteFunc: sc.DeletePodGroup,
 	})
 
-	// create informer for Queue information
-	sc.queueInformer = kbinformer.Scheduling().V1alpha1().Queues()
-	sc.queueInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    sc.AddQueue,
-		UpdateFunc: sc.UpdateQueue,
-		DeleteFunc: sc.DeleteQueue,
+	// create informer for Queue(v1alpha1) information
+	sc.queueInformerv1alpha1 = kbinformer.Scheduling().V1alpha1().Queues()
+	sc.queueInformerv1alpha1.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    sc.AddQueuev1alpha1,
+		UpdateFunc: sc.UpdateQueuev1alpha1,
+		DeleteFunc: sc.DeleteQueuev1alpha1,
+	})
+
+	// create informer for Queue(v1alpha2) information
+	sc.queueInformerv1alpha2 = kbinformer.Scheduling().V1alpha2().Queues()
+	sc.queueInformerv1alpha2.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    sc.AddQueuev1alpha2,
+		UpdateFunc: sc.UpdateQueuev1alpha2,
+		DeleteFunc: sc.DeleteQueuev1alpha2,
 	})
 
 	return sc
@@ -308,7 +318,8 @@ func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 	go sc.pvInformer.Informer().Run(stopCh)
 	go sc.pvcInformer.Informer().Run(stopCh)
 	go sc.scInformer.Informer().Run(stopCh)
-	go sc.queueInformer.Informer().Run(stopCh)
+	go sc.queueInformerv1alpha1.Informer().Run(stopCh)
+	go sc.queueInformerv1alpha2.Informer().Run(stopCh)
 
 	if options.ServerOpts.EnablePriorityClass {
 		go sc.pcInformer.Informer().Run(stopCh)
@@ -334,7 +345,8 @@ func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) bool {
 				sc.pvInformer.Informer().HasSynced,
 				sc.pvcInformer.Informer().HasSynced,
 				sc.scInformer.Informer().HasSynced,
-				sc.queueInformer.Informer().HasSynced,
+				sc.queueInformerv1alpha1.Informer().HasSynced,
+				sc.queueInformerv1alpha2.Informer().HasSynced,
 			}
 			if options.ServerOpts.EnablePriorityClass {
 				informerSynced = append(informerSynced, sc.pcInformer.Informer().HasSynced)
